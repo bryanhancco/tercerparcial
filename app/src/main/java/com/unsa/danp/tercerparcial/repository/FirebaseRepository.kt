@@ -8,6 +8,7 @@ import com.unsa.danp.tercerparcial.model.*
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.Flow
 
 class FirebaseRepository {
     private val db = FirebaseFirestore.getInstance()
@@ -46,15 +47,18 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
-    
+
     suspend fun obtenerUsuario(dni: String, context: Context): Result<Usuario?> {
+        // Option A: If you want to keep documents indexed by MAC, you'd need to query by DNI field
         return try {
             if (!isNetworkAvailable(context)) {
                 return Result.failure(Exception("Sin conexión a internet"))
             }
-            
-            val document = db.collection("usuarios").document(dni).get().await()
-            if (document.exists()) {
+            // This query searches for a document where the 'dni' field matches
+            val querySnapshot = db.collection("usuarios").whereEqualTo("dni", dni).get().await()
+            if (!querySnapshot.isEmpty) {
+                // Assuming DNI is unique, take the first result
+                val document = querySnapshot.documents.first()
                 val data = document.data!!
                 val usuario = Usuario(
                     dni = data["dni"] as String,
@@ -70,13 +74,16 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
-    
+
+
+    // Existing function to get by MAC, which is consistent with how documents are stored
     suspend fun obtenerUsuarioPorMac(macAddress: String, context: Context): Result<Usuario?> {
         return try {
             if (!isNetworkAvailable(context)) {
                 return Result.failure(Exception("Sin conexión a internet"))
             }
-            
+
+            // This is correct as per your Firestore structure
             val document = db.collection("usuarios").document(macAddress).get().await()
             if (document.exists()) {
                 val data = document.data!!
@@ -94,14 +101,18 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
-    
-    suspend fun actualizarEstadoSalud(dni: String, estadoSalud: EstadoSalud, context: Context): Result<Unit> {
+
+    suspend fun actualizarEstadoSalud(
+        macAddress: String, // ¡Importante: ahora usa macAddress!
+        estadoSalud: EstadoSalud,
+        context: Context
+    ): Result<Unit> {
         return try {
             if (!isNetworkAvailable(context)) {
                 return Result.failure(Exception("Sin conexión a internet"))
             }
-            
-            db.collection("usuarios").document(dni)
+
+            db.collection("usuarios").document(macAddress) // Aquí se usa la MAC
                 .update("estadoSalud", estadoSalud.name).await()
             Result.success(Unit)
         } catch (e: Exception) {
@@ -229,4 +240,43 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
+
+    fun observeAllUsers(context: Context): Flow<Result<List<Usuario>>> = callbackFlow {
+        if (!isNetworkAvailable(context)) {
+            trySend(Result.failure(Exception("Sin conexión a internet")))
+            close()
+            return@callbackFlow
+        }
+
+        val registration = db.collection("usuarios")
+            .addSnapshotListener { snapshot, e ->
+                if (e != null) {
+                    trySend(Result.failure(e))
+                    close(e)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot != null) {
+                    val users = snapshot.documents.mapNotNull { doc ->
+                        val data = doc.data
+                        if (data != null) {
+                            Usuario(
+                                dni = data["dni"] as String,
+                                rol = Rol.valueOf(data["rol"] as String),
+                                estadoSalud = EstadoSalud.valueOf(data["estadoSalud"] as String),
+                                macAddress = data["macAddress"] as String
+                            )
+                        } else null
+                    }
+                    trySend(Result.success(users))
+                } else {
+                    trySend(Result.success(emptyList()))
+                }
+            }
+
+        awaitClose {
+            registration.remove()
+        }
+    }
+
 } 

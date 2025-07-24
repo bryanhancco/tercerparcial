@@ -26,7 +26,7 @@ fun AutoridadScreen(
     onLogout: () -> Unit
 ) {
     val usuarios by viewModel.usuarios.collectAsStateWithLifecycle()
-    
+
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -39,7 +39,7 @@ fun AutoridadScreen(
                 }
             }
         )
-        
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
@@ -57,12 +57,12 @@ fun AutoridadScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         val totalUsuarios = usuarios.size
                         val sanos = usuarios.count { it.estadoSalud == EstadoSalud.SANO }
                         val posiblementeInfectados = usuarios.count { it.estadoSalud == EstadoSalud.POSIBLE_INFECTADO }
                         val infectados = usuarios.count { it.estadoSalud == EstadoSalud.INFECTADO }
-                        
+
                         Text("Total de usuarios: $totalUsuarios")
                         Text("Sanos: $sanos")
                         Text("Posiblemente infectados: $posiblementeInfectados")
@@ -70,7 +70,7 @@ fun AutoridadScreen(
                     }
                 }
             }
-            
+
             // Tabla de usuarios
             item {
                 Text(
@@ -79,12 +79,13 @@ fun AutoridadScreen(
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             items(usuarios) { usuario ->
                 UsuarioCard(
                     usuario = usuario,
                     onEstadoChange = { nuevoEstado ->
-                        viewModel.actualizarEstadoSalud(usuario.dni, nuevoEstado)
+                        // Pasar la macAddress del usuario al ViewModel
+                        viewModel.actualizarEstadoSalud(usuario.macAddress, nuevoEstado)
                     }
                 )
             }

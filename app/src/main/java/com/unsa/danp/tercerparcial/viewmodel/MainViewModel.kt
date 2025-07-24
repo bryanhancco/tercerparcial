@@ -25,23 +25,37 @@ import java.io.FileReader
 import java.io.IOException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val firebaseRepository = FirebaseRepository()
+    private val firebaseRepository = FirebaseRepository() // O podrías inyectar el context aquí: FirebaseRepository(application)
     private val context = getApplication<Application>()
-    
+
     private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
-    
+
     private val _currentUser = MutableStateFlow<Usuario?>(null)
     val currentUser: StateFlow<Usuario?> = _currentUser.asStateFlow()
-    
+
     private val _usuarios = MutableStateFlow<List<Usuario>>(emptyList())
     val usuarios: StateFlow<List<Usuario>> = _usuarios.asStateFlow()
-    
+
     private val _contactos = MutableStateFlow<List<ContactoCercano>>(emptyList())
     val contactos: StateFlow<List<ContactoCercano>> = _contactos.asStateFlow()
-    
+
     private val _isBluetoothScanning = MutableStateFlow(false)
     val isBluetoothScanning: StateFlow<Boolean> = _isBluetoothScanning.asStateFlow()
+
+    init {
+        // Observar todos los usuarios en tiempo real para la pantalla de Autoridad
+        viewModelScope.launch {
+            firebaseRepository.observeAllUsers(context).collect { result ->
+                result.onSuccess { users ->
+                    _usuarios.value = users
+                }.onFailure { e ->
+                    _uiState.value = UiState.Error("Error al observar usuarios: ${e.message}")
+                    Log.e("MainViewModel", "Error al observar usuarios: ${e.message}")
+                }
+            }
+        }
+    }
 
     fun getEthMac(): String {
         var macAddress = "Not able to read the MAC address"
@@ -67,7 +81,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Método 1: Usar BluetoothAdapter (más confiable)
         val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val bluetoothAdapter = bluetoothManager.adapter
-        
+
         if (bluetoothAdapter != null) {
             val bluetoothMac = bluetoothAdapter.address
             if (bluetoothMac != null && bluetoothMac != "02:00:00:00:00:00") {
@@ -75,7 +89,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return bluetoothMac
             }
         }
-        
+
         // Método 2: Leer desde archivo del sistema (para dispositivos rooteados)
         try {
             val ethMac = getEthMac()
@@ -86,13 +100,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             Log.e("MAC Address", "Error leyendo archivo: ${e.message}")
         }
-        
+
         // Método 3: Generar MAC única basada en características del dispositivo
         val deviceId = android.provider.Settings.Secure.getString(
-            context.contentResolver, 
+            context.contentResolver,
             android.provider.Settings.Secure.ANDROID_ID
         )
-        
+
         val uniqueMac = generateMacFromDeviceId(deviceId)
         Log.d("MAC Address", "Generada única: $uniqueMac")
         return uniqueMac
@@ -130,7 +144,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Cargar datos según el rol
                     when (usuario.rol) {
-                        Rol.AUTORIDAD -> cargarDatosAutoridad()
+                        Rol.AUTORIDAD -> {} // No es necesario llamar, el listener en init ya carga _usuarios
                         Rol.PERSONA -> cargarDatosPersona()
                     }
                 } else {
@@ -172,13 +186,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-    fun actualizarEstadoSalud(dni: String, nuevoEstado: EstadoSalud) {
+    fun actualizarEstadoSalud(macAddress: String, nuevoEstado: EstadoSalud) {
         viewModelScope.launch {
             try {
-                firebaseRepository.actualizarEstadoSalud(dni, nuevoEstado, context)
-                cargarDatosAutoridad() // Recargar datos
+                firebaseRepository.actualizarEstadoSalud(macAddress, nuevoEstado, context)
+                // No es necesario llamar a cargarDatosAutoridad() explícitamente aquí
+                // porque el listener en `init` ya se encargará de actualizar `_usuarios`
+                Log.d("MainViewModel", "Estado de salud actualizado en Firebase para MAC: $macAddress a $nuevoEstado")
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Error al actualizar estado: ${e.message}")
+                Log.e("MainViewModel", "Error al actualizar estado para MAC: $macAddress: ${e.message}")
             }
         }
     }
