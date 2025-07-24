@@ -6,9 +6,12 @@ import android.net.NetworkCapabilities
 import com.google.firebase.firestore.FirebaseFirestore
 import com.unsa.danp.tercerparcial.model.*
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.channels.trySendBlocking
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.Flow
+import kotlinx.coroutines.flow.Flow
 
 class FirebaseRepository {
     private val db = FirebaseFirestore.getInstance()
@@ -216,7 +219,7 @@ class FirebaseRepository {
         return try {
             val usuario = obtenerUsuario(dniUsuario, context).getOrNull()
             if (usuario != null && usuario.estadoSalud == EstadoSalud.SANO) {
-                actualizarEstadoSalud(dniUsuario, EstadoSalud.POSIBLE_INFECTADO, context)
+                actualizarEstadoSalud(usuario.macAddress, EstadoSalud.POSIBLE_INFECTADO, context)
             } else {
                 Result.success(Unit)
             }
@@ -251,8 +254,8 @@ class FirebaseRepository {
         val registration = db.collection("usuarios")
             .addSnapshotListener { snapshot, e ->
                 if (e != null) {
-                    trySend(Result.failure(e))
-                    close(e)
+                    trySendBlocking(Result.failure(e))
+                    // No es necesario llamar a close(e) aquí
                     return@addSnapshotListener
                 }
 
@@ -268,15 +271,14 @@ class FirebaseRepository {
                             )
                         } else null
                     }
-                    trySend(Result.success(users))
+                    trySendBlocking(Result.success(users))
                 } else {
-                    trySend(Result.success(emptyList()))
+                    trySendBlocking(Result.success(emptyList()))
                 }
             }
-
         awaitClose {
             registration.remove()
         }
     }
 
-} 
+}
